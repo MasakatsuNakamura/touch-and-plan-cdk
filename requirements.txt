@@ -1,1 +1,28 @@
--e .
+attrs==21.2.0
+aws-cdk.assets==1.118.0
+aws-cdk.aws-cloudwatch==1.118.0
+aws-cdk.aws-ec2==1.118.0
+aws-cdk.aws-events==1.118.0
+aws-cdk.aws-iam==1.118.0
+aws-cdk.aws-kms==1.118.0
+aws-cdk.aws-logs==1.118.0
+aws-cdk.aws-s3==1.118.0
+aws-cdk.aws-s3-assets==1.118.0
+aws-cdk.aws-ssm==1.118.0
+aws-cdk.cloud-assembly-schema==1.118.0
+aws-cdk.core==1.118.0
+aws-cdk.cx-api==1.118.0
+aws-cdk.region-info==1.118.0
+backports.entry-points-selectable==1.1.0
+cattrs==1.7.1
+constructs==3.3.124
+distlib==0.3.2
+filelock==3.0.12
+jsii==1.33.0
+platformdirs==2.2.0
+publication==0.0.3
+python-dateutil==2.8.2
+six==1.16.0
+-e git+ssh://git@github.com/TASUKI-Corporation/touch-and-plan-cdk.git@eda172a62efbac04bd8f16a0d82e7de2565db768#egg=touch_and_plan_cdk
+typing-extensions==3.10.0.0
+virtualenv==20.7.2
