@@ -48,21 +48,21 @@ class TouchAndPlanCdkStack(cdk.Stack):
       vpc=vpc,
     )
 
-    # ecr_web = ecr.Repository(
-    #   self,
-    #   'web',
-    #   repository_name='web',
-    # )
-    # ecr_nginx = ecr.Repository(
-    #   self,
-    #   'nginx',
-    #   repository_name='nginx',
-    # )
-    # ecr_geojson = ecr.Repository(
-    #   self,
-    #   'geojson',
-    #   repository_name='geojson',
-    # )
+    ecr_web = ecr.Repository(
+      self,
+      'ecr_web',
+      repository_name='web',
+    )
+    ecr_nginx = ecr.Repository(
+      self,
+      'ecr_nginx',
+      repository_name='nginx',
+    )
+    ecr_geojson = ecr.Repository(
+      self,
+      'ecr_geojson',
+      repository_name='geojson',
+    )
 
     # load_balancer = alb.ApplicationLoadBalancer(
     #   self,
@@ -90,12 +90,12 @@ class TouchAndPlanCdkStack(cdk.Stack):
 
     task_definition_touch_and_plan.add_container(
       id='nginx',
-      image=ecs.ContainerImage.from_registry('nginx'),
+      image=ecs.ContainerImage.from_ecr_repository(ecr_nginx),
     )
 
     task_definition_touch_and_plan.add_container(
       id='web',
-      image=ecs.ContainerImage.from_registry('web'),
+      image=ecs.ContainerImage.from_ecr_repository(ecr_web),
     )
 
     task_definition_geojson = ecs.TaskDefinition(
@@ -109,7 +109,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
 
     task_definition_geojson.add_container(
       id='nginx',
-      image=ecs.ContainerImage.from_registry('geojson'),
+      image=ecs.ContainerImage.from_ecr_repository(ecr_geojson),
     )
 
     ecs.FargateService(
