@@ -9,8 +9,13 @@ from aws_cdk import core
 from aws_cdk import (
   aws_s3 as s3,
   aws_ec2 as ec2,
-  core as cdk
+  aws_ecs as ecs,
+  aws_ecs_patterns as ecsp,
+  aws_ecr as ecr,
+  aws_elasticloadbalancingv2 as alb,
+  core as cdk,
 )
+import os
 
 class TouchAndPlanCdkStack(cdk.Stack):
 
@@ -18,55 +23,138 @@ class TouchAndPlanCdkStack(cdk.Stack):
     super().__init__(scope, construct_id, **kwargs)
 
     # The code that defines your stack goes here
-    bucket = s3.Bucket(self,
-      "MyFirstBucket",
-      versioned=True,)
+    # bucket = s3.Bucket(self,
+    #   "MyFirstBucket",
+    #   versioned=True,)
 
-    cidr = '10.0.0.0/21'
+    cidr = '10.1.0.0/16'
     vpc = ec2.Vpc(
       self,
-      id='test-vpc',
+      id='touch-and-plan-vpc',
       cidr=cidr,
-      nat_gateways=1,
       subnet_configuration=[
         ec2.SubnetConfiguration(
-          cidr_mask=24,
+          cidr_mask=20,
           name='public',
           subnet_type=ec2.SubnetType.PUBLIC,
-        ),
-        ec2.SubnetConfiguration(
-          cidr_mask=24,
-          name='private',
-          subnet_type=ec2.SubnetType.PRIVATE,
         ),
       ],
     )
 
-    security_group = ec2.SecurityGroup(
+    cluster = ecs.Cluster(
       self,
-      id='test-security-group',
+      id='touch-and-plan-cluster',
+      cluster_name='touch-and-plan-cluster',
       vpc=vpc,
-      security_group_name='test-security-group'
     )
 
-    security_group.add_ingress_rule(
-      peer=ec2.Peer.ipv4(cidr),
-      connection=ec2.Port.tcp(22),
-    )
+    # ecr_web = ecr.Repository(
+    #   self,
+    #   'web',
+    #   repository_name='web',
+    # )
+    # ecr_nginx = ecr.Repository(
+    #   self,
+    #   'nginx',
+    #   repository_name='nginx',
+    # )
+    # ecr_geojson = ecr.Repository(
+    #   self,
+    #   'geojson',
+    #   repository_name='geojson',
+    # )
 
-    image_id = ec2.AmazonLinuxImage(generation=ec2.AmazonLinuxGeneration.AMAZON_LINUX_2).get_image(self).image_id
+    # load_balancer = alb.ApplicationLoadBalancer(
+    #   self,
+    #   id='touch_and_plan_alb',
+    #   vpc=vpc,
+    # )
 
-    ec2.CfnInstance(
+    # ecsp.ApplicationLoadBalancedFargateService(
+    #   self,
+    #   "Touch&Plan Web",
+    #   task_image_options=ecsp.ApplicationLoadBalancedTaskImageOptions(
+    #     image=ecs.ContainerImage.from_registry("nginx")
+    #   ),
+    #   public_load_balancer=True,
+    # )
+
+    task_definition_touch_and_plan = ecs.TaskDefinition(
       self,
-      id='testec2',
-      availability_zone="ap-northeast-1a",
-      image_id=image_id,
-      instance_type="t3.micro",
-      key_name='testkey',
-      security_group_ids=[security_group.security_group_id],
-      subnet_id=vpc.private_subnets[0].subnet_id,
-      tags=[{
-        "key": "Name",
-        "value": "testec2"
-      }]
+      id='touch-and-plan',
+      compatibility=ecs.Compatibility('FARGATE'),
+      cpu='256',
+      memory_mib='512',
+      family='touch-and-plan',
     )
+
+    task_definition_touch_and_plan.add_container(
+      id='nginx',
+      image=ecs.ContainerImage.from_registry('nginx'),
+    )
+
+    task_definition_touch_and_plan.add_container(
+      id='web',
+      image=ecs.ContainerImage.from_registry('web'),
+    )
+
+    task_definition_geojson = ecs.TaskDefinition(
+      self,
+      id='geojson',
+      compatibility=ecs.Compatibility('FARGATE'),
+      cpu='256',
+      memory_mib='512',
+      family='geojson',
+    )
+
+    task_definition_geojson.add_container(
+      id='nginx',
+      image=ecs.ContainerImage.from_registry('geojson'),
+    )
+
+    ecs.FargateService(
+      self,
+      id='service-touch-and-plan',
+      service_name='touch-and-plan',
+      desired_count=0,
+      cluster=cluster,
+      task_definition=task_definition_touch_and_plan,
+    )
+
+    ecs.FargateService(
+      self,
+      id='service-geojson',
+      service_name='geojson',
+      desired_count=0,
+      cluster=cluster,
+      task_definition=task_definition_geojson,
+    )
+
+    # security_group = ec2.SecurityGroup(
+    #   self,
+    #   id='test-security-group',
+    #   vpc=vpc,
+    #   security_group_name='test-security-group'
+    # )
+
+    # security_group.add_ingress_rule(
+    #   peer=ec2.Peer.ipv4(cidr),
+    #   connection=ec2.Port.tcp(22),
+    # )
+
+    # image_id = ec2.AmazonLinuxImage(generation=ec2.AmazonLinuxGeneration.AMAZON_LINUX_2).get_image(self).image_id
+
+    # ec2.CfnInstance(
+    #   self,
+    #   id='testec2',
+    #   availability_zone="ap-northeast-1a",
+    #   image_id=image_id,
+    #   instance_type="t3.micro",
+    #   key_name='testkey',
+    #   security_group_ids=[security_group.security_group_id],
+    #   subnet_id=vpc.private_subnets[0].subnet_id,
+    #   tags=[{
+    #     "key": "Name",
+    #     "value": "testec2"
+    #   }]
+    # )
