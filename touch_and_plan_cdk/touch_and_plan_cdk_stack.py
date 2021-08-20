@@ -51,17 +51,17 @@ class TouchAndPlanCdkStack(cdk.Stack):
     ecr_web = ecr.Repository(
       self,
       'ecr_web',
-      repository_name='web',
+      repository_name='touch_and_plan_web',
     )
     ecr_nginx = ecr.Repository(
       self,
       'ecr_nginx',
-      repository_name='nginx',
+      repository_name='touch_and_plan_nginx',
     )
     ecr_geojson = ecr.Repository(
       self,
       'ecr_geojson',
-      repository_name='geojson',
+      repository_name='touch_and_plan_geojson',
     )
 
     # load_balancer = alb.ApplicationLoadBalancer(
