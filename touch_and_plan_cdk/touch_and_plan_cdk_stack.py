@@ -13,6 +13,10 @@ from aws_cdk import (
   aws_ecs_patterns as ecsp,
   aws_ecr as ecr,
   aws_elasticloadbalancingv2 as alb,
+  aws_route53 as route53,
+  aws_certificatemanager as acm,
+  aws_rds as rds,
+  aws_ssm as ssm,
   core as cdk,
 )
 import os
@@ -32,11 +36,17 @@ class TouchAndPlanCdkStack(cdk.Stack):
       self,
       id='touch-and-plan-vpc',
       cidr=cidr,
+      nat_gateways=1,
       subnet_configuration=[
         ec2.SubnetConfiguration(
           cidr_mask=20,
           name='public',
           subnet_type=ec2.SubnetType.PUBLIC,
+        ),
+        ec2.SubnetConfiguration(
+          cidr_mask=20,
+          name='private',
+          subnet_type=ec2.SubnetType.PRIVATE,
         ),
       ],
     )
@@ -48,71 +58,48 @@ class TouchAndPlanCdkStack(cdk.Stack):
       vpc=vpc,
     )
 
-    ecr_web = ecr.Repository(
+    ecr_web = ecr.Repository.from_repository_name(
       self,
       'ecr_web',
       repository_name='touch_and_plan_web',
     )
-    ecr_nginx = ecr.Repository(
+    ecr_nginx = ecr.Repository.from_repository_name(
       self,
       'ecr_nginx',
       repository_name='touch_and_plan_nginx',
     )
-    ecr_geojson = ecr.Repository(
+    ecr_geojson = ecr.Repository.from_repository_name(
       self,
       'ecr_geojson',
       repository_name='touch_and_plan_geojson',
     )
 
-    # load_balancer = alb.ApplicationLoadBalancer(
-    #   self,
-    #   id='touch_and_plan_alb',
-    #   vpc=vpc,
-    # )
-
-    # ecsp.ApplicationLoadBalancedFargateService(
-    #   self,
-    #   "Touch&Plan Web",
-    #   task_image_options=ecsp.ApplicationLoadBalancedTaskImageOptions(
-    #     image=ecs.ContainerImage.from_registry("nginx")
-    #   ),
-    #   public_load_balancer=True,
-    # )
-
-    task_definition_touch_and_plan = ecs.TaskDefinition(
+    task_definition_touch_and_plan = ecs.FargateTaskDefinition(
       self,
       id='touch-and-plan',
-      compatibility=ecs.Compatibility('FARGATE'),
-      cpu='256',
-      memory_mib='512',
+      cpu=256,
+      memory_limit_mib=512,
       family='touch-and-plan',
     )
 
-    task_definition_touch_and_plan.add_container(
+    container = task_definition_touch_and_plan.add_container(
       id='nginx',
       image=ecs.ContainerImage.from_ecr_repository(ecr_nginx),
     )
+
+    container.add_port_mappings(ecs.PortMapping(container_port=80, host_port=80))
 
     task_definition_touch_and_plan.add_container(
       id='web',
       image=ecs.ContainerImage.from_ecr_repository(ecr_web),
     )
 
-    task_definition_geojson = ecs.TaskDefinition(
-      self,
+    task_definition_touch_and_plan.add_container(
       id='geojson',
-      compatibility=ecs.Compatibility('FARGATE'),
-      cpu='256',
-      memory_mib='512',
-      family='geojson',
-    )
-
-    task_definition_geojson.add_container(
-      id='nginx',
       image=ecs.ContainerImage.from_ecr_repository(ecr_geojson),
     )
 
-    ecs.FargateService(
+    ecs_service = ecs.FargateService(
       self,
       id='service-touch-and-plan',
       service_name='touch-and-plan',
@@ -121,15 +108,57 @@ class TouchAndPlanCdkStack(cdk.Stack):
       task_definition=task_definition_touch_and_plan,
     )
 
-    ecs.FargateService(
+    load_balancer = alb.ApplicationLoadBalancer(
       self,
-      id='service-geojson',
-      service_name='geojson',
-      desired_count=0,
-      cluster=cluster,
-      task_definition=task_definition_geojson,
+      id='load-balancer',
+      load_balancer_name='touch-and-plan-alb',
+      vpc=vpc,
+      internet_facing=True,
     )
 
+    hosted_zone = route53.HostedZone.from_hosted_zone_attributes(
+      self,
+      'hosted-zone',
+      zone_name='tasuki-tech.jp',
+      hosted_zone_id='Z01510561ZAO0Y6YTTFNY',
+    )
+
+    certificate = acm.Certificate(
+      self,
+      "Certificate",
+      domain_name="touch-and-plan.tasuki-tech.jp",
+      validation=acm.CertificateValidation.from_dns(hosted_zone)
+    )
+
+    listener = load_balancer.add_listener(
+      "Listner",
+      port=443,
+      open=True,
+      certificates=[certificate],
+    )
+
+    listener.add_targets(
+      "ECS",
+      port=80,
+      targets=[ecs_service.load_balancer_target(
+        container_name="nginx",
+        container_port=80
+      )]
+    )
+
+    rds_credentials = rds.Credentials.from_generated_secret('admin', secret_name='touch-and-plan')
+    # Example automatically generated without compilation. See https://github.com/aws/jsii/issues/826
+    rds_instance = rds.DatabaseInstance(self, "Instance",
+      engine=rds.DatabaseInstanceEngine.mysql(version=rds.MysqlEngineVersion.VER_8_0_25),
+      credentials=rds_credentials,
+      # optional, defaults to m5.large
+      instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.SMALL),
+      # credentials=rds.Credentials.from_generated_secret("syscdk"), # Optional - will default to 'admin' username and generated password
+      vpc=vpc,
+      vpc_subnets={
+        "subnet_type": ec2.SubnetType.PRIVATE
+      }
+    )
     # security_group = ec2.SecurityGroup(
     #   self,
     #   id='test-security-group',
