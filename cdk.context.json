@@ -1,15 +1,4 @@
 {
-  "availability-zones:account=208843173329:region=ap-northeast-1": [
-    "ap-northeast-1a",
-    "ap-northeast-1c",
-    "ap-northeast-1d"
-  ],
-  "availability-zones:account=081979565122:region=ap-northeast-1": [
-    "ap-northeast-1a",
-    "ap-northeast-1b",
-    "ap-northeast-1c",
-    "ap-northeast-1d"
-  ],
   "availability-zones:account=208843173329:region=ap-northeast-3": [
     "ap-northeast-3a",
     "ap-northeast-3b",
