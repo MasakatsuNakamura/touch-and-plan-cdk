@@ -17,6 +17,7 @@ from aws_cdk import (
   aws_certificatemanager as acm,
   aws_rds as rds,
   aws_ssm as ssm,
+  aws_logs as logs,
   core as cdk,
 )
 import os
@@ -30,6 +31,8 @@ class TouchAndPlanCdkStack(cdk.Stack):
     # bucket = s3.Bucket(self,
     #   "MyFirstBucket",
     #   versioned=True,)
+
+    app_name = 'touch-and-plan'
 
     cidr = '10.1.0.0/16'
     vpc = ec2.Vpc(
@@ -54,47 +57,50 @@ class TouchAndPlanCdkStack(cdk.Stack):
     cluster = ecs.Cluster(
       self,
       id='touch-and-plan-cluster',
-      cluster_name='touch-and-plan-cluster',
+      cluster_name=f'{app_name}-cluster',
       vpc=vpc,
     )
 
-    ecr_web = ecr.Repository.from_repository_name(
+    ecr_web = ecr.Repository(
       self,
       'ecr_web',
-      repository_name='touch_and_plan_web',
+      repository_name=f'{app_name}-web',
+      removal_policy=cdk.RemovalPolicy.DESTROY,
     )
-    ecr_nginx = ecr.Repository.from_repository_name(
+    ecr_nginx = ecr.Repository(
       self,
       'ecr_nginx',
-      repository_name='touch_and_plan_nginx',
+      repository_name=f'{app_name}-nginx',
+      removal_policy=cdk.RemovalPolicy.DESTROY,
     )
-    ecr_geojson = ecr.Repository.from_repository_name(
+    ecr_geojson = ecr.Repository(
       self,
       'ecr_geojson',
-      repository_name='touch_and_plan_geojson',
+      repository_name=f'{app_name}-geojson',
+      removal_policy=cdk.RemovalPolicy.DESTROY,
     )
 
-    task_definition_touch_and_plan = ecs.FargateTaskDefinition(
+    task_definition = ecs.FargateTaskDefinition(
       self,
       id='touch-and-plan',
       cpu=256,
       memory_limit_mib=512,
-      family='touch-and-plan',
+      family=app_name,
     )
 
-    container = task_definition_touch_and_plan.add_container(
+    container = task_definition.add_container(
       id='nginx',
       image=ecs.ContainerImage.from_ecr_repository(ecr_nginx),
     )
 
     container.add_port_mappings(ecs.PortMapping(container_port=80, host_port=80))
 
-    task_definition_touch_and_plan.add_container(
+    task_definition.add_container(
       id='web',
       image=ecs.ContainerImage.from_ecr_repository(ecr_web),
     )
 
-    task_definition_touch_and_plan.add_container(
+    task_definition.add_container(
       id='geojson',
       image=ecs.ContainerImage.from_ecr_repository(ecr_geojson),
     )
@@ -102,18 +108,35 @@ class TouchAndPlanCdkStack(cdk.Stack):
     ecs_service = ecs.FargateService(
       self,
       id='service-touch-and-plan',
-      service_name='touch-and-plan',
+      service_name=app_name,
       desired_count=0,
       cluster=cluster,
-      task_definition=task_definition_touch_and_plan,
+      task_definition=task_definition,
     )
+
+    logs.LogGroup(
+      self,
+      id='LogGroup',
+      log_group_name=f'/ecs/{app_name}',
+      removal_policy=cdk.RemovalPolicy.DESTROY,
+    )
+
+    alb_security_group = ec2.SecurityGroup(
+      self,
+      "ALBSecurityGroup",
+      vpc=vpc,
+    )
+
+    alb_security_group.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(80))
+    alb_security_group.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(443))
 
     load_balancer = alb.ApplicationLoadBalancer(
       self,
       id='load-balancer',
-      load_balancer_name='touch-and-plan-alb',
+      load_balancer_name=f'{app_name}-alb',
       vpc=vpc,
       internet_facing=True,
+      security_group=alb_security_group,
     )
 
     hosted_zone = route53.HostedZone.from_hosted_zone_attributes(
@@ -143,10 +166,19 @@ class TouchAndPlanCdkStack(cdk.Stack):
       targets=[ecs_service.load_balancer_target(
         container_name="nginx",
         container_port=80
-      )]
+      )],
+      target_group_name=f'{app_name}-tg'
     )
 
-    rds_credentials = rds.Credentials.from_generated_secret('admin', secret_name='touch-and-plan')
+    rds_security_group = ec2.SecurityGroup(
+      self,
+      "RDSSecurityGroup",
+      vpc=vpc,
+    )
+
+    rds_security_group.add_ingress_rule(ec2.Peer.ipv4(cidr), ec2.Port.tcp(3306))
+
+    rds_credentials = rds.Credentials.from_generated_secret('admin', secret_name=app_name)
     # Example automatically generated without compilation. See https://github.com/aws/jsii/issues/826
     rds_instance = rds.DatabaseInstance(self, "Instance",
       engine=rds.DatabaseInstanceEngine.mysql(version=rds.MysqlEngineVersion.VER_8_0_25),
@@ -157,7 +189,8 @@ class TouchAndPlanCdkStack(cdk.Stack):
       vpc=vpc,
       vpc_subnets={
         "subnet_type": ec2.SubnetType.PRIVATE
-      }
+      },
+      security_groups=[rds_security_group],
     )
     # security_group = ec2.SecurityGroup(
     #   self,
