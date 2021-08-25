@@ -7,20 +7,18 @@ from aws_cdk import core as cdk
 from aws_cdk import core
 
 from aws_cdk import (
-  aws_s3 as s3,
+  # aws_s3 as s3,
   aws_ec2 as ec2,
   aws_ecs as ecs,
-  aws_ecs_patterns as ecsp,
   aws_ecr as ecr,
   aws_elasticloadbalancingv2 as alb,
   aws_route53 as route53,
   aws_certificatemanager as acm,
   aws_rds as rds,
-  aws_ssm as ssm,
   aws_logs as logs,
   core as cdk,
 )
-import os
+from cdk_ec2_key_pair import KeyPair
 
 class TouchAndPlanCdkStack(cdk.Stack):
 
@@ -33,26 +31,29 @@ class TouchAndPlanCdkStack(cdk.Stack):
     #   versioned=True,)
 
     app_name = 'touch-and-plan'
-
     cidr = '10.1.0.0/16'
+
     vpc = ec2.Vpc(
       self,
       id='touch-and-plan-vpc',
       cidr=cidr,
-      nat_gateways=1,
       subnet_configuration=[
         ec2.SubnetConfiguration(
           cidr_mask=20,
           name='public',
           subnet_type=ec2.SubnetType.PUBLIC,
         ),
-        ec2.SubnetConfiguration(
-          cidr_mask=20,
-          name='private',
-          subnet_type=ec2.SubnetType.PRIVATE,
-        ),
       ],
     )
+
+    ec2_security_group = ec2.SecurityGroup(
+      self,
+      id='ec2-security-group',
+      vpc=vpc,
+      security_group_name='ec2-security-group'
+    )
+
+    ec2_security_group.add_ingress_rule(peer=ec2.Peer.any_ipv4(), connection=ec2.Port.tcp(22))
 
     cluster = ecs.Cluster(
       self,
@@ -105,6 +106,13 @@ class TouchAndPlanCdkStack(cdk.Stack):
       image=ecs.ContainerImage.from_ecr_repository(ecr_geojson),
     )
 
+    ecs_security_group = ec2.SecurityGroup(
+      self,
+      "ECSSecurityGroup",
+      vpc=vpc,
+      security_group_name=f'{app_name}-ecs-sg',
+    )
+
     ecs_service = ecs.FargateService(
       self,
       id='service-touch-and-plan',
@@ -112,6 +120,8 @@ class TouchAndPlanCdkStack(cdk.Stack):
       desired_count=0,
       cluster=cluster,
       task_definition=task_definition,
+      security_group=ecs_security_group,
+      vpc_subnets=ec2.SubnetSelection(subnets=vpc.public_subnets),
     )
 
     logs.LogGroup(
@@ -125,6 +135,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
       self,
       "ALBSecurityGroup",
       vpc=vpc,
+      security_group_name=f'{app_name}-alb-sg',
     )
 
     alb_security_group.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(80))
@@ -174,49 +185,68 @@ class TouchAndPlanCdkStack(cdk.Stack):
       self,
       "RDSSecurityGroup",
       vpc=vpc,
+      security_group_name=f'{app_name}-rds-sg',
     )
 
-    rds_security_group.add_ingress_rule(ec2.Peer.ipv4(cidr), ec2.Port.tcp(3306))
+    rds_security_group.add_ingress_rule(ecs_security_group, ec2.Port.tcp(3306))
+    rds_security_group.add_ingress_rule(ec2_security_group, ec2.Port.tcp(3306))
 
-    rds_credentials = rds.Credentials.from_generated_secret('admin', secret_name=app_name)
-    # Example automatically generated without compilation. See https://github.com/aws/jsii/issues/826
-    rds_instance = rds.DatabaseInstance(self, "Instance",
+    parameter_group = rds.ParameterGroup(
+      self,
+      "ParameterGroup",
       engine=rds.DatabaseInstanceEngine.mysql(version=rds.MysqlEngineVersion.VER_8_0_25),
-      credentials=rds_credentials,
-      # optional, defaults to m5.large
-      instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.SMALL),
-      # credentials=rds.Credentials.from_generated_secret("syscdk"), # Optional - will default to 'admin' username and generated password
-      vpc=vpc,
-      vpc_subnets={
-        "subnet_type": ec2.SubnetType.PRIVATE
+      parameters={
+        "character_set_client": "utf8mb4",
+        "character_set_connection": "utf8mb4",
+        "character_set_database": "utf8mb4",
+        "character_set_results": "utf8mb4",
+        "character_set_server": "utf8mb4",
+        "innodb_file_per_table": "1",
+        "skip-character-set-client-handshake": "1",
+        "init_connect": "SET NAMES utf8mb4",
       },
-      security_groups=[rds_security_group],
+      description=f'{app_name} Parameter Group',
     )
-    # security_group = ec2.SecurityGroup(
-    #   self,
-    #   id='test-security-group',
-    #   vpc=vpc,
-    #   security_group_name='test-security-group'
-    # )
 
-    # security_group.add_ingress_rule(
-    #   peer=ec2.Peer.ipv4(cidr),
-    #   connection=ec2.Port.tcp(22),
-    # )
+    # Example automatically generated without compilation. See https://github.com/aws/jsii/issues/826
+    rds.DatabaseInstance(self, "Instance",
+      engine=rds.DatabaseInstanceEngine.mysql(version=rds.MysqlEngineVersion.VER_8_0_25),
+      instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.SMALL), # optional, defaults to m5.large
+      credentials=rds.Credentials.from_generated_secret('admin', secret_name=app_name), # Optional - will default to 'admin' username and generated password
+      parameter_group=parameter_group,
+      vpc=vpc,
+      vpc_subnets=ec2.SubnetSelection(subnets=vpc.public_subnets),
+      security_groups=[rds_security_group],
+      database_name=app_name.replace("-", "_"),
+      instance_identifier=f'{app_name}-rds',
+      storage_encrypted=True,
+      backup_retention=cdk.Duration.days(7),
+      monitoring_interval=cdk.Duration.seconds(60),
+      cloudwatch_logs_retention=logs.RetentionDays.ONE_MONTH,
+      auto_minor_version_upgrade=False,
+    )
 
-    # image_id = ec2.AmazonLinuxImage(generation=ec2.AmazonLinuxGeneration.AMAZON_LINUX_2).get_image(self).image_id
+    key_pair = KeyPair(
+      self,
+      "KeyPair",
+      name=f'{app_name}',
+      store_public_key=True,
+    )
 
-    # ec2.CfnInstance(
-    #   self,
-    #   id='testec2',
-    #   availability_zone="ap-northeast-1a",
-    #   image_id=image_id,
-    #   instance_type="t3.micro",
-    #   key_name='testkey',
-    #   security_group_ids=[security_group.security_group_id],
-    #   subnet_id=vpc.private_subnets[0].subnet_id,
-    #   tags=[{
-    #     "key": "Name",
-    #     "value": "testec2"
-    #   }]
-    # )
+    user_data = ec2.UserData.for_linux(shebang='#!/bin/bash')
+    user_data.add_commands('yum update -y')
+    user_data.add_commands('yum localinstall -y https://dev.mysql.com/get/mysql80-community-release-el7-3.noarch.rpm')
+    user_data.add_commands('yum-config-manager --enable mysql80-community')
+    user_data.add_commands('yum install -y mysql-community-client')
+
+    ec2.Instance(
+      self,
+      'ec2',
+      vpc=vpc,
+      machine_image=ec2.AmazonLinuxImage(generation=ec2.AmazonLinuxGeneration.AMAZON_LINUX_2),
+      instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.MICRO),
+      key_name=key_pair.key_pair_name,
+      security_group=ec2_security_group,
+      vpc_subnets=ec2.SubnetSelection(subnets=vpc.public_subnets),
+      user_data=user_data,
+    )

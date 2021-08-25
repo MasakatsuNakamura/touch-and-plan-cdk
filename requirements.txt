@@ -53,6 +53,8 @@ aws-cdk.cx-api==1.118.0
 aws-cdk.region-info==1.118.0
 backports.entry-points-selectable==1.1.0
 cattrs==1.7.1
+cdk-ec2-key-pair==2.2.1
+cdk-iam-floyd==0.112.1
 constructs==3.3.124
 distlib==0.3.2
 filelock==3.0.12
