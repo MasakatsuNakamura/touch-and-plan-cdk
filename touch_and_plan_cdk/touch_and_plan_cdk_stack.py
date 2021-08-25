@@ -13,6 +13,7 @@ from aws_cdk import (
   aws_ecr as ecr,
   aws_elasticloadbalancingv2 as alb,
   aws_route53 as route53,
+  aws_route53_targets as alias,
   aws_certificatemanager as acm,
   aws_rds as rds,
   aws_logs as logs,
@@ -155,6 +156,12 @@ class TouchAndPlanCdkStack(cdk.Stack):
       'hosted-zone',
       zone_name='tasuki-tech.jp',
       hosted_zone_id='Z01510561ZAO0Y6YTTFNY',
+    )
+
+    route53.ARecord(self, "ARecord",
+      zone=hosted_zone,
+      target=route53.RecordTarget.from_alias(alias.LoadBalancerTarget(load_balancer)),
+      record_name=app_name,
     )
 
     certificate = acm.Certificate(
