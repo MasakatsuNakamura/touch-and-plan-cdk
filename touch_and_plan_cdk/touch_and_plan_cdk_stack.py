@@ -123,6 +123,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
       task_definition=task_definition,
       security_group=ecs_security_group,
       vpc_subnets=ec2.SubnetSelection(subnets=vpc.public_subnets),
+      assign_public_ip=True,
     )
 
     logs.LogGroup(
