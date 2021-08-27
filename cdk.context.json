@@ -3,5 +3,30 @@
     "ap-northeast-1a",
     "ap-northeast-1c",
     "ap-northeast-1d"
-  ]
+  ],
+  "vpc-provider:account=208843173329:filter.vpc-id=vpc-076934b9cd5f7038a:region=ap-northeast-1:returnAsymmetricSubnets=true": {
+    "vpcId": "vpc-076934b9cd5f7038a",
+    "vpcCidrBlock": "10.0.0.0/16",
+    "availabilityZones": [],
+    "subnetGroups": [
+      {
+        "name": "Private",
+        "type": "Private",
+        "subnets": [
+          {
+            "subnetId": "subnet-079ea122708763f76",
+            "cidr": "10.0.0.0/24",
+            "availabilityZone": "ap-northeast-1a",
+            "routeTableId": "rtb-096946c75381b11c0"
+          },
+          {
+            "subnetId": "subnet-03bc9bf9604ae6506",
+            "cidr": "10.0.1.0/24",
+            "availabilityZone": "ap-northeast-1c",
+            "routeTableId": "rtb-096946c75381b11c0"
+          }
+        ]
+      }
+    ]
+  }
 }

@@ -48,6 +48,29 @@ class TouchAndPlanCdkStack(cdk.Stack):
       ],
     )
 
+    vpc_tp = ec2.Vpc.from_lookup(self, id='TPPlannerVPC',
+      vpc_id='vpc-076934b9cd5f7038a',
+    )
+
+    vpc_peering_connection = ec2.CfnVPCPeeringConnection(self, 'Peering',
+      vpc_id=cdk.Token.as_string(vpc.vpc_id),
+      peer_vpc_id=cdk.Token.as_string(vpc_tp.vpc_id),
+    )
+
+    for i, subnet in enumerate(vpc.public_subnets):
+      ec2.CfnRoute(self, f'VpcRoute{i}',
+        route_table_id=subnet.route_table.route_table_id,
+        destination_cidr_block=vpc_tp.vpc_cidr_block,
+        vpc_peering_connection_id=vpc_peering_connection.ref,
+      )
+
+    for i, subnet in enumerate(vpc_tp.public_subnets):
+      ec2.CfnRoute(self, f'PeerVpcRoute{i}',
+        route_table_id=subnet.route_table.route_table_id,
+        destination_cidr_block=vpc.vpc_cidr_block,
+        vpc_peering_connection_id=vpc_peering_connection.ref,
+      )
+
     ec2_security_group = ec2.SecurityGroup(
       self,
       id='ec2-security-group',
@@ -85,7 +108,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
 
     task_role = iam.Role(self, "TaskRole",
       assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
-      role_name=f'{"".join(s.capitalize() for s in app_name.split("_"))}TaskRole',
+      role_name=f'{"".join(s.capitalize() for s in app_name.split("-"))}TaskRole',
     )
 
     task_role.add_to_policy(iam.PolicyStatement(
@@ -269,4 +292,5 @@ class TouchAndPlanCdkStack(cdk.Stack):
       security_group=ec2_security_group,
       vpc_subnets=ec2.SubnetSelection(subnets=vpc.public_subnets),
       user_data=user_data,
+      instance_name=f'{app_name} Bastion',
     )
