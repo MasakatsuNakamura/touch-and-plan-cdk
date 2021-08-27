@@ -64,7 +64,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
         vpc_peering_connection_id=vpc_peering_connection.ref,
       )
 
-    for i, subnet in enumerate(vpc_tp.public_subnets):
+    for i, subnet in enumerate(vpc_tp.select_subnets().subnets):
       ec2.CfnRoute(self, f'PeerVpcRoute{i}',
         route_table_id=subnet.route_table.route_table_id,
         destination_cidr_block=vpc.vpc_cidr_block,
