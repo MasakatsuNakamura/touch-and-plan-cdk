@@ -7,10 +7,19 @@ from aws_cdk import core as cdk
 from aws_cdk import core
 
 from aws_cdk import (
-  aws_s3 as s3,
+  # aws_s3 as s3,
   aws_ec2 as ec2,
-  core as cdk
+  aws_ecs as ecs,
+  aws_ecr as ecr,
+  aws_elasticloadbalancingv2 as alb,
+  aws_route53 as route53,
+  aws_route53_targets as alias,
+  aws_certificatemanager as acm,
+  aws_rds as rds,
+  aws_logs as logs,
+  core as cdk,
 )
+from cdk_ec2_key_pair import KeyPair
 
 class TouchAndPlanCdkStack(cdk.Stack):
 
@@ -18,55 +27,234 @@ class TouchAndPlanCdkStack(cdk.Stack):
     super().__init__(scope, construct_id, **kwargs)
 
     # The code that defines your stack goes here
-    bucket = s3.Bucket(self,
-      "MyFirstBucket",
-      versioned=True,)
+    # bucket = s3.Bucket(self,
+    #   "MyFirstBucket",
+    #   versioned=True,)
 
-    cidr = '10.0.0.0/21'
+    app_name = 'touch-and-plan'
+    cidr = '10.1.0.0/16'
+
     vpc = ec2.Vpc(
       self,
-      id='test-vpc',
+      id='touch-and-plan-vpc',
       cidr=cidr,
-      nat_gateways=1,
       subnet_configuration=[
         ec2.SubnetConfiguration(
-          cidr_mask=24,
+          cidr_mask=20,
           name='public',
           subnet_type=ec2.SubnetType.PUBLIC,
-        ),
-        ec2.SubnetConfiguration(
-          cidr_mask=24,
-          name='private',
-          subnet_type=ec2.SubnetType.PRIVATE,
         ),
       ],
     )
 
-    security_group = ec2.SecurityGroup(
+    ec2_security_group = ec2.SecurityGroup(
       self,
-      id='test-security-group',
+      id='ec2-security-group',
       vpc=vpc,
-      security_group_name='test-security-group'
+      security_group_name='ec2-security-group'
     )
 
-    security_group.add_ingress_rule(
-      peer=ec2.Peer.ipv4(cidr),
-      connection=ec2.Port.tcp(22),
-    )
+    ec2_security_group.add_ingress_rule(peer=ec2.Peer.any_ipv4(), connection=ec2.Port.tcp(22))
 
-    image_id = ec2.AmazonLinuxImage(generation=ec2.AmazonLinuxGeneration.AMAZON_LINUX_2).get_image(self).image_id
-
-    ec2.CfnInstance(
+    cluster = ecs.Cluster(
       self,
-      id='testec2',
-      availability_zone="ap-northeast-1a",
-      image_id=image_id,
-      instance_type="t3.micro",
-      key_name='testkey',
-      security_group_ids=[security_group.security_group_id],
-      subnet_id=vpc.private_subnets[0].subnet_id,
-      tags=[{
-        "key": "Name",
-        "value": "testec2"
-      }]
+      id='touch-and-plan-cluster',
+      cluster_name=f'{app_name}-cluster',
+      vpc=vpc,
+    )
+
+    ecr_web = ecr.Repository(
+      self,
+      'ecr_web',
+      repository_name=f'{app_name}-web',
+      removal_policy=cdk.RemovalPolicy.DESTROY,
+    )
+    ecr_nginx = ecr.Repository(
+      self,
+      'ecr_nginx',
+      repository_name=f'{app_name}-nginx',
+      removal_policy=cdk.RemovalPolicy.DESTROY,
+    )
+    ecr_geojson = ecr.Repository(
+      self,
+      'ecr_geojson',
+      repository_name=f'{app_name}-geojson',
+      removal_policy=cdk.RemovalPolicy.DESTROY,
+    )
+
+    task_definition = ecs.FargateTaskDefinition(
+      self,
+      id='touch-and-plan',
+      cpu=256,
+      memory_limit_mib=512,
+      family=app_name,
+    )
+
+    container = task_definition.add_container(
+      id='nginx',
+      image=ecs.ContainerImage.from_ecr_repository(ecr_nginx),
+    )
+
+    container.add_port_mappings(ecs.PortMapping(container_port=80, host_port=80))
+
+    task_definition.add_container(
+      id='web',
+      image=ecs.ContainerImage.from_ecr_repository(ecr_web),
+    )
+
+    task_definition.add_container(
+      id='geojson',
+      image=ecs.ContainerImage.from_ecr_repository(ecr_geojson),
+    )
+
+    ecs_security_group = ec2.SecurityGroup(
+      self,
+      "ECSSecurityGroup",
+      vpc=vpc,
+      security_group_name=f'{app_name}-ecs-sg',
+    )
+
+    ecs_service = ecs.FargateService(
+      self,
+      id='service-touch-and-plan',
+      service_name=app_name,
+      desired_count=0,
+      cluster=cluster,
+      task_definition=task_definition,
+      security_group=ecs_security_group,
+      vpc_subnets=ec2.SubnetSelection(subnets=vpc.public_subnets),
+      assign_public_ip=True,
+    )
+
+    logs.LogGroup(
+      self,
+      id='LogGroup',
+      log_group_name=f'/ecs/{app_name}',
+      removal_policy=cdk.RemovalPolicy.DESTROY,
+    )
+
+    alb_security_group = ec2.SecurityGroup(
+      self,
+      "ALBSecurityGroup",
+      vpc=vpc,
+      security_group_name=f'{app_name}-alb-sg',
+    )
+
+    alb_security_group.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(80))
+    alb_security_group.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(443))
+
+    load_balancer = alb.ApplicationLoadBalancer(
+      self,
+      id='load-balancer',
+      load_balancer_name=f'{app_name}-alb',
+      vpc=vpc,
+      internet_facing=True,
+      security_group=alb_security_group,
+    )
+
+    hosted_zone = route53.HostedZone.from_hosted_zone_attributes(
+      self,
+      'hosted-zone',
+      zone_name='tasuki-tech.jp',
+      hosted_zone_id='Z01510561ZAO0Y6YTTFNY',
+    )
+
+    route53.ARecord(self, "ARecord",
+      zone=hosted_zone,
+      target=route53.RecordTarget.from_alias(alias.LoadBalancerTarget(load_balancer)),
+      record_name=app_name,
+    )
+
+    certificate = acm.Certificate(
+      self,
+      "Certificate",
+      domain_name="touch-and-plan.tasuki-tech.jp",
+      validation=acm.CertificateValidation.from_dns(hosted_zone)
+    )
+
+    listener = load_balancer.add_listener(
+      "Listner",
+      port=443,
+      open=True,
+      certificates=[certificate],
+    )
+
+    listener.add_targets(
+      "ECS",
+      port=80,
+      targets=[ecs_service.load_balancer_target(
+        container_name="nginx",
+        container_port=80
+      )],
+      target_group_name=f'{app_name}-tg'
+    )
+
+    rds_security_group = ec2.SecurityGroup(
+      self,
+      "RDSSecurityGroup",
+      vpc=vpc,
+      security_group_name=f'{app_name}-rds-sg',
+    )
+
+    rds_security_group.add_ingress_rule(ecs_security_group, ec2.Port.tcp(3306))
+    rds_security_group.add_ingress_rule(ec2_security_group, ec2.Port.tcp(3306))
+
+    parameter_group = rds.ParameterGroup(
+      self,
+      "ParameterGroup",
+      engine=rds.DatabaseInstanceEngine.mysql(version=rds.MysqlEngineVersion.VER_8_0_25),
+      parameters={
+        "character_set_client": "utf8mb4",
+        "character_set_connection": "utf8mb4",
+        "character_set_database": "utf8mb4",
+        "character_set_results": "utf8mb4",
+        "character_set_server": "utf8mb4",
+        "innodb_file_per_table": "1",
+        "skip-character-set-client-handshake": "1",
+        "init_connect": "SET NAMES utf8mb4",
+      },
+      description=f'{app_name} Parameter Group',
+    )
+
+    # Example automatically generated without compilation. See https://github.com/aws/jsii/issues/826
+    rds.DatabaseInstance(self, "Instance",
+      engine=rds.DatabaseInstanceEngine.mysql(version=rds.MysqlEngineVersion.VER_8_0_25),
+      instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.SMALL), # optional, defaults to m5.large
+      credentials=rds.Credentials.from_generated_secret('admin', secret_name=app_name), # Optional - will default to 'admin' username and generated password
+      parameter_group=parameter_group,
+      vpc=vpc,
+      vpc_subnets=ec2.SubnetSelection(subnets=vpc.public_subnets),
+      security_groups=[rds_security_group],
+      database_name=app_name.replace("-", "_"),
+      instance_identifier=f'{app_name}-rds',
+      storage_encrypted=True,
+      backup_retention=cdk.Duration.days(7),
+      monitoring_interval=cdk.Duration.seconds(60),
+      cloudwatch_logs_retention=logs.RetentionDays.ONE_MONTH,
+      auto_minor_version_upgrade=False,
+    )
+
+    key_pair = KeyPair(
+      self,
+      "KeyPair",
+      name=f'{app_name}',
+      store_public_key=True,
+    )
+
+    user_data = ec2.UserData.for_linux(shebang='#!/bin/bash')
+    user_data.add_commands('yum update -y')
+    user_data.add_commands('yum localinstall -y https://dev.mysql.com/get/mysql80-community-release-el7-3.noarch.rpm')
+    user_data.add_commands('yum-config-manager --enable mysql80-community')
+    user_data.add_commands('yum install -y mysql-community-client')
+
+    ec2.Instance(
+      self,
+      'ec2',
+      vpc=vpc,
+      machine_image=ec2.AmazonLinuxImage(generation=ec2.AmazonLinuxGeneration.AMAZON_LINUX_2),
+      instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.MICRO),
+      key_name=key_pair.key_pair_name,
+      security_group=ec2_security_group,
+      vpc_subnets=ec2.SubnetSelection(subnets=vpc.public_subnets),
+      user_data=user_data,
     )
