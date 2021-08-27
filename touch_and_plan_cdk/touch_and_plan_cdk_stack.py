@@ -8,6 +8,7 @@ from aws_cdk import core
 
 from aws_cdk import (
   # aws_s3 as s3,
+  aws_iam as iam,
   aws_ec2 as ec2,
   aws_ecs as ecs,
   aws_ecr as ecr,
@@ -82,12 +83,23 @@ class TouchAndPlanCdkStack(cdk.Stack):
       removal_policy=cdk.RemovalPolicy.DESTROY,
     )
 
+    task_role = iam.Role(self, "TaskRole",
+      assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
+      role_name=f'{"".join(s.capitalize() for s in app_name.split("_"))}TaskRole',
+    )
+
+    task_role.add_to_policy(iam.PolicyStatement(
+      resources=["*"],
+      actions=["ssm:CreateActivation", "iam:PassRole"],
+    ))
+
     task_definition = ecs.FargateTaskDefinition(
       self,
       id='touch-and-plan',
       cpu=256,
       memory_limit_mib=512,
       family=app_name,
+      task_role=task_role,
     )
 
     container = task_definition.add_container(
