@@ -264,6 +264,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
         "innodb_file_per_table": "1",
         "skip-character-set-client-handshake": "1",
         "init_connect": "SET NAMES utf8mb4",
+        "sort_buffer_size": "8388608",
       },
       description=f'{app_name} Parameter Group',
     )
