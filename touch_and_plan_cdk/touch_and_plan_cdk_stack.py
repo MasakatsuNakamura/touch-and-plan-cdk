@@ -20,6 +20,7 @@ from aws_cdk import (
   aws_logs as logs,
   core as cdk,
 )
+
 from cdk_ec2_key_pair import KeyPair
 
 class TouchAndPlanCdkStack(cdk.Stack):
@@ -222,6 +223,22 @@ class TouchAndPlanCdkStack(cdk.Stack):
         container_port=80
       )],
       target_group_name=f'{app_name}-tg'
+    )
+
+    listener_80 = load_balancer.add_listener(
+      "NonSslListener",
+      port=80,
+      open=True,
+    )
+
+    listener_80.add_redirect_response(
+      "RedirectResponse",
+      status_code="HTTP_301",
+      protocol='HTTPS',
+      host='#{host}',
+      port='443',
+      path='/#{path}',
+      query='#{query}',
     )
 
     rds_security_group = ec2.SecurityGroup(
