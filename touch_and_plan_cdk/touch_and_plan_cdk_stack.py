@@ -169,6 +169,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
     task_definition_stg = ecs.FargateTaskDefinition(
       self,
       id='touch-and-plan-staging',
+      execution_role=task_definition.execution_role,
       cpu=256,
       memory_limit_mib=512,
       family=f"{app_name}-staging",
@@ -201,7 +202,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
 
     logs.LogGroup(
       self,
-      id='LogGroup',
+      id='LogGroupStg',
       log_group_name=f'/ecs/{app_name}-staging',
       removal_policy=cdk.RemovalPolicy.DESTROY,
     )
@@ -238,7 +239,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
       record_name=app_name,
     )
 
-    route53.ARecord(self, "ARecord",
+    route53.ARecord(self, "ARecordWild",
       zone=hosted_zone,
       target=route53.RecordTarget.from_alias(alias.LoadBalancerTarget(load_balancer)),
       record_name=f"staging.{app_name}",
@@ -253,7 +254,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
 
     certificate_wild = acm.Certificate(
       self,
-      "Certificate",
+      "CertificateWild",
       domain_name="*.touch-and-plan.tasuki-tech.jp",
       validation=acm.CertificateValidation.from_dns(hosted_zone)
     )
@@ -278,11 +279,12 @@ class TouchAndPlanCdkStack(cdk.Stack):
 
     # ステージングサービスのリスナーを追加
     listener.add_targets(
-      "ECS",
+      "ECSStg",
       port=80,
       conditions=[
         alb.ListenerCondition.host_headers([f"staging.{app_name}.tasuki-tech.jp"]),
       ],
+      priority=100,
       targets=[ecs_service_stg.load_balancer_target(
         container_name="nginx",
         container_port=80
