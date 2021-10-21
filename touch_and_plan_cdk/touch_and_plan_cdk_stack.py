@@ -117,6 +117,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
       actions=["ssm:CreateActivation", "iam:PassRole"],
     ))
 
+    # 本番環境のECSサービスを定義
     task_definition = ecs.FargateTaskDefinition(
       self,
       id='touch-and-plan',
@@ -136,11 +137,6 @@ class TouchAndPlanCdkStack(cdk.Stack):
     task_definition.add_container(
       id='web',
       image=ecs.ContainerImage.from_ecr_repository(ecr_web),
-    )
-
-    task_definition.add_container(
-      id='geojson',
-      image=ecs.ContainerImage.from_ecr_repository(ecr_geojson),
     )
 
     ecs_security_group = ec2.SecurityGroup(
@@ -166,6 +162,48 @@ class TouchAndPlanCdkStack(cdk.Stack):
       self,
       id='LogGroup',
       log_group_name=f'/ecs/{app_name}',
+      removal_policy=cdk.RemovalPolicy.DESTROY,
+    )
+
+    # ステージング環境のECSサービスを定義
+    task_definition_stg = ecs.FargateTaskDefinition(
+      self,
+      id='touch-and-plan-staging',
+      execution_role=task_definition.execution_role,
+      cpu=256,
+      memory_limit_mib=512,
+      family=f"{app_name}-staging",
+      task_role=task_role,
+    )
+
+    container = task_definition_stg.add_container(
+      id='nginx',
+      image=ecs.ContainerImage.from_ecr_repository(ecr_nginx),
+    )
+
+    container.add_port_mappings(ecs.PortMapping(container_port=80, host_port=80))
+
+    task_definition_stg.add_container(
+      id='web',
+      image=ecs.ContainerImage.from_ecr_repository(ecr_web),
+    )
+
+    ecs_service_stg = ecs.FargateService(
+      self,
+      id='service-touch-and-plan-staging',
+      service_name=f"{app_name}-staging",
+      desired_count=0,
+      cluster=cluster,
+      task_definition=task_definition_stg,
+      security_group=ecs_security_group,
+      vpc_subnets=ec2.SubnetSelection(subnets=vpc.public_subnets),
+      assign_public_ip=True,
+    )
+
+    logs.LogGroup(
+      self,
+      id='LogGroupStg',
+      log_group_name=f'/ecs/{app_name}-staging',
       removal_policy=cdk.RemovalPolicy.DESTROY,
     )
 
@@ -201,6 +239,12 @@ class TouchAndPlanCdkStack(cdk.Stack):
       record_name=app_name,
     )
 
+    route53.ARecord(self, "ARecordWild",
+      zone=hosted_zone,
+      target=route53.RecordTarget.from_alias(alias.LoadBalancerTarget(load_balancer)),
+      record_name=f"staging.{app_name}",
+    )
+
     certificate = acm.Certificate(
       self,
       "Certificate",
@@ -208,13 +252,21 @@ class TouchAndPlanCdkStack(cdk.Stack):
       validation=acm.CertificateValidation.from_dns(hosted_zone)
     )
 
+    certificate_wild = acm.Certificate(
+      self,
+      "CertificateWild",
+      domain_name="*.touch-and-plan.tasuki-tech.jp",
+      validation=acm.CertificateValidation.from_dns(hosted_zone)
+    )
+
     listener = load_balancer.add_listener(
       "Listner",
       port=443,
       open=True,
-      certificates=[certificate],
+      certificates=[certificate, certificate_wild],
     )
 
+    # 本番サービスのリスナーを追加
     listener.add_targets(
       "ECS",
       port=80,
@@ -225,6 +277,21 @@ class TouchAndPlanCdkStack(cdk.Stack):
       target_group_name=f'{app_name}-tg'
     )
 
+    # ステージングサービスのリスナーを追加
+    listener.add_targets(
+      "ECSStg",
+      port=80,
+      conditions=[
+        alb.ListenerCondition.host_headers([f"staging.{app_name}.tasuki-tech.jp"]),
+      ],
+      priority=100,
+      targets=[ecs_service_stg.load_balancer_target(
+        container_name="nginx",
+        container_port=80
+      )]
+    )
+
+    # Non-SSLのリスナーを追加(SSLに転送する)
     listener_80 = load_balancer.add_listener(
       "NonSslListener",
       port=80,
