@@ -336,6 +336,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
       description=f'{app_name} Parameter Group',
     )
 
+    # 本番環境用RDSインスタンスを作成
     # Example automatically generated without compilation. See https://github.com/aws/jsii/issues/826
     rds.DatabaseInstance(self, "Instance",
       engine=rds.DatabaseInstanceEngine.mysql(version=rds.MysqlEngineVersion.VER_8_0_25),
@@ -347,6 +348,24 @@ class TouchAndPlanCdkStack(cdk.Stack):
       security_groups=[rds_security_group],
       database_name=app_name.replace("-", "_"),
       instance_identifier=f'{app_name}-rds',
+      storage_encrypted=True,
+      backup_retention=cdk.Duration.days(7),
+      monitoring_interval=cdk.Duration.seconds(60),
+      cloudwatch_logs_retention=logs.RetentionDays.ONE_MONTH,
+      auto_minor_version_upgrade=False,
+    )
+
+    # ステージング環境用RDSインスタンスを作成
+    rds.DatabaseInstance(self, "InstanceStg",
+      engine=rds.DatabaseInstanceEngine.mysql(version=rds.MysqlEngineVersion.VER_8_0_25),
+      instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.SMALL), # optional, defaults to m5.large
+      credentials=rds.Credentials.from_generated_secret('admin', secret_name=f"{app_name}-staging"), # Optional - will default to 'admin' username and generated password
+      parameter_group=parameter_group,
+      vpc=vpc,
+      vpc_subnets=ec2.SubnetSelection(subnets=vpc.public_subnets),
+      security_groups=[rds_security_group],
+      database_name=f"{app_name}-staging".replace("-", "_"),
+      instance_identifier=f'{app_name}-staging-rds',
       storage_encrypted=True,
       backup_retention=cdk.Duration.days(7),
       monitoring_interval=cdk.Duration.seconds(60),
