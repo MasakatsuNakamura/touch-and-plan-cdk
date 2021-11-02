@@ -7,7 +7,7 @@ from aws_cdk import core as cdk
 from aws_cdk import core
 
 from aws_cdk import (
-  # aws_s3 as s3,
+  aws_s3 as s3,
   aws_iam as iam,
   aws_ec2 as ec2,
   aws_ecs as ecs,
@@ -29,12 +29,12 @@ class TouchAndPlanCdkStack(cdk.Stack):
     super().__init__(scope, construct_id, **kwargs)
 
     # The code that defines your stack goes here
-    # bucket = s3.Bucket(self,
-    #   "MyFirstBucket",
-    #   versioned=True,)
-
     app_name = 'touch-and-plan'
     cidr = '10.1.0.0/16'
+
+    bucket = s3.Bucket(self,
+      f"{app_name}-bucket",
+      versioned=True,)
 
     vpc = ec2.Vpc(
       self,
@@ -80,6 +80,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
     )
 
     ec2_security_group.add_ingress_rule(peer=ec2.Peer.any_ipv4(), connection=ec2.Port.tcp(22))
+    ec2_security_group.add_ingress_rule(peer=ec2.Peer.ipv4(cidr), connection=ec2.Port.tcp(80))
 
     cluster = ecs.Cluster(
       self,
@@ -117,7 +118,11 @@ class TouchAndPlanCdkStack(cdk.Stack):
       actions=["ssm:CreateActivation", "iam:PassRole"],
     ))
 
-    # 本番環境のECSサービスを定義
+    task_role.add_to_policy(iam.PolicyStatement(
+      resources=[bucket.bucket_arn],
+      actions=["s3:List*", "s3:Get*"],
+    ))
+
     task_definition = ecs.FargateTaskDefinition(
       self,
       id='touch-and-plan',
@@ -385,6 +390,16 @@ class TouchAndPlanCdkStack(cdk.Stack):
     user_data.add_commands('yum localinstall -y https://dev.mysql.com/get/mysql80-community-release-el7-3.noarch.rpm')
     user_data.add_commands('yum-config-manager --enable mysql80-community')
     user_data.add_commands('yum install -y mysql-community-client')
+    user_data.add_commands('amazon-linux-extras install nginx1 -y')
+    user_data.add_commands('echo "server {" > //etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "  listen  80;" >> //etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "  server_name  3.115.221.70;" >> //etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "  location / {" >> //etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "    proxy_pass https://calc-volume-dev.heroz.jp;" >> //etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "  }" >> //etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "}" >> //etc/nginx/conf.d/app.conf')
+    user_data.add_commands('systemctl start nginx')
+    user_data.add_commands('systemctl enable nginx')
 
     ec2.Instance(
       self,
