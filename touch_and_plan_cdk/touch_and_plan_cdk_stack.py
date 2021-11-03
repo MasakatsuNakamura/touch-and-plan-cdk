@@ -33,7 +33,8 @@ class TouchAndPlanCdkStack(cdk.Stack):
     cidr = '10.1.0.0/16'
 
     bucket = s3.Bucket(self,
-      f"{app_name}-bucket",
+      "S3Bucket",
+      bucket_name=f"{app_name}-bucket",
       versioned=True,)
 
     vpc = ec2.Vpc(
@@ -120,7 +121,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
 
     task_role.add_to_policy(iam.PolicyStatement(
       resources=[bucket.bucket_arn],
-      actions=["s3:List*", "s3:Get*"],
+      actions=["s3:List*", "s3:Get*", "s3:Put*", "s3:Delete*"],
     ))
 
     task_definition = ecs.FargateTaskDefinition(
@@ -247,7 +248,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
     route53.ARecord(self, "ARecordWild",
       zone=hosted_zone,
       target=route53.RecordTarget.from_alias(alias.LoadBalancerTarget(load_balancer)),
-      record_name=f"staging.{app_name}",
+      record_name=f"*.{app_name}",
     )
 
     certificate = acm.Certificate(
@@ -391,13 +392,20 @@ class TouchAndPlanCdkStack(cdk.Stack):
     user_data.add_commands('yum-config-manager --enable mysql80-community')
     user_data.add_commands('yum install -y mysql-community-client')
     user_data.add_commands('amazon-linux-extras install nginx1 -y')
-    user_data.add_commands('echo "server {" > //etc/nginx/conf.d/app.conf')
-    user_data.add_commands('echo "  listen  80;" >> //etc/nginx/conf.d/app.conf')
-    user_data.add_commands('echo "  server_name  3.115.221.70;" >> //etc/nginx/conf.d/app.conf')
-    user_data.add_commands('echo "  location / {" >> //etc/nginx/conf.d/app.conf')
-    user_data.add_commands('echo "    proxy_pass https://calc-volume-dev.heroz.jp;" >> //etc/nginx/conf.d/app.conf')
-    user_data.add_commands('echo "  }" >> //etc/nginx/conf.d/app.conf')
-    user_data.add_commands('echo "}" >> //etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "server {" > /etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "  listen  80;" >> /etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "  server_name  heroz-dev.touch-and-plan.tasuki-tech.jp;" >> /etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "  location / {" >> /etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "    proxy_pass https://calc-volume-dev.heroz.jp;" >> /etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "  }" >> /etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "}" >> /etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "server {" >> /etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "  listen  80;" >> /etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "  server_name  heroz.touch-and-plan.tasuki-tech.jp;" >> /etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "  location / {" >> /etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "    proxy_pass https://calc-volume.heroz.jp;" > /etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "  }" >> /etc/nginx/conf.d/app.conf')
+    user_data.add_commands('echo "}" >> /etc/nginx/conf.d/app.conf')
     user_data.add_commands('systemctl start nginx')
     user_data.add_commands('systemctl enable nginx')
 
