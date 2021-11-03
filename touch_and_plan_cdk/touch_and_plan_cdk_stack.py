@@ -37,6 +37,11 @@ class TouchAndPlanCdkStack(cdk.Stack):
       bucket_name=f"{app_name}-bucket",
       versioned=True,)
 
+    bucket_staging = s3.Bucket(self,
+      "S3BucketStaging",
+      bucket_name=f"{app_name}-staging-bucket",
+      versioned=True,)
+
     vpc = ec2.Vpc(
       self,
       id='touch-and-plan-vpc',
@@ -121,6 +126,11 @@ class TouchAndPlanCdkStack(cdk.Stack):
 
     task_role.add_to_policy(iam.PolicyStatement(
       resources=[bucket.bucket_arn],
+      actions=["s3:List*", "s3:Get*", "s3:Put*", "s3:Delete*"],
+    ))
+
+    task_role.add_to_policy(iam.PolicyStatement(
+      resources=[bucket_staging.bucket_arn],
       actions=["s3:List*", "s3:Get*", "s3:Put*", "s3:Delete*"],
     ))
 
@@ -386,7 +396,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
       store_public_key=True,
     )
 
-    user_data = ec2.UserData.for_linux(shebang='#!/bin/bash')
+    user_data = ec2.UserData.for_linux(shebang='#!/bin/bash -ex exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&')
     user_data.add_commands('yum update -y')
     user_data.add_commands('yum localinstall -y https://dev.mysql.com/get/mysql80-community-release-el7-3.noarch.rpm')
     user_data.add_commands('yum-config-manager --enable mysql80-community')
