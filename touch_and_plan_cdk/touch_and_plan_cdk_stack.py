@@ -260,6 +260,17 @@ class TouchAndPlanCdkStack(cdk.Stack):
       target=route53.RecordTarget.from_alias(alias.LoadBalancerTarget(load_balancer)),
       record_name=f"*.{app_name}",
     )
+    route53.ARecord(self, "ARecordTouch",
+      zone=hosted_zone,
+      target=route53.RecordTarget.from_alias(alias.LoadBalancerTarget(load_balancer)),
+      record_name='touch',
+    )
+
+    route53.ARecord(self, "ARecordTouchWild",
+      zone=hosted_zone,
+      target=route53.RecordTarget.from_alias(alias.LoadBalancerTarget(load_balancer)),
+      record_name="*.touch",
+    )
 
     certificate = acm.Certificate(
       self,
@@ -299,6 +310,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
       port=80,
       conditions=[
         alb.ListenerCondition.host_headers([f"staging.{app_name}.tasuki-tech.jp"]),
+        alb.ListenerCondition.host_headers([f"staging.touch.tasuki-tech.jp"]),
       ],
       priority=100,
       targets=[ecs_service_stg.load_balancer_target(
