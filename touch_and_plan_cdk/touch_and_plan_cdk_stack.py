@@ -1,3 +1,4 @@
+from socket import timeout
 from aws_cdk import core as cdk
 
 # For consistency with other languages, `cdk` is the preferred import name for
@@ -126,12 +127,22 @@ class TouchAndPlanCdkStack(cdk.Stack):
 
     task_role.add_to_policy(iam.PolicyStatement(
       resources=[bucket.bucket_arn],
-      actions=["s3:List*", "s3:Get*", "s3:Put*", "s3:Delete*"],
+      actions=["s3:List*"],
+    ))
+
+    task_role.add_to_policy(iam.PolicyStatement(
+      resources=[f'{bucket.bucket_arn}/*'],
+      actions=["s3:Get*", "s3:Put*", "s3:Delete*"],
     ))
 
     task_role.add_to_policy(iam.PolicyStatement(
       resources=[bucket_staging.bucket_arn],
-      actions=["s3:List*", "s3:Get*", "s3:Put*", "s3:Delete*"],
+      actions=["s3:List*"],
+    ))
+
+    task_role.add_to_policy(iam.PolicyStatement(
+      resources=[f'{bucket_staging.bucket_arn}/*'],
+      actions=["s3:Get*", "s3:Put*", "s3:Delete*"],
     ))
 
     task_definition = ecs.FargateTaskDefinition(
@@ -241,6 +252,8 @@ class TouchAndPlanCdkStack(cdk.Stack):
       internet_facing=True,
       security_group=alb_security_group,
     )
+
+    load_balancer.set_attribute('idle_timeout.timeout_seconds', '300')
 
     hosted_zone = route53.HostedZone.from_hosted_zone_attributes(
       self,
