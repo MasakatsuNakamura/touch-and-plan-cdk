@@ -323,8 +323,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
       "ECSStg",
       port=80,
       conditions=[
-        alb.ListenerCondition.host_headers([f"staging.{app_name}.tasuki-tech.jp"]),
-        alb.ListenerCondition.host_headers([f"staging.touch.tasuki-tech.jp"]),
+        alb.ListenerCondition.host_headers([f"staging.{app_name}.tasuki-tech.jp", "staging.touch.tasuki-tech.jp"]),
       ],
       priority=100,
       targets=[ecs_service_stg.load_balancer_target(
