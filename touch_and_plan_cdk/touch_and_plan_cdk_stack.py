@@ -273,6 +273,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
       target=route53.RecordTarget.from_alias(alias.LoadBalancerTarget(load_balancer)),
       record_name=f"*.{app_name}",
     )
+
     route53.ARecord(self, "ARecordTouch",
       zone=hosted_zone,
       target=route53.RecordTarget.from_alias(alias.LoadBalancerTarget(load_balancer)),
