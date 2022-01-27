@@ -293,6 +293,13 @@ class TouchAndPlanCdkStack(cdk.Stack):
       validation=acm.CertificateValidation.from_dns(hosted_zone)
     )
 
+    certificate_touch = acm.Certificate(
+      self,
+      "CertificateTouch",
+      domain_name="touch.tasuki-tech.jp",
+      validation=acm.CertificateValidation.from_dns(hosted_zone)
+    )
+
     certificate_wild = acm.Certificate(
       self,
       "CertificateWild",
@@ -300,11 +307,18 @@ class TouchAndPlanCdkStack(cdk.Stack):
       validation=acm.CertificateValidation.from_dns(hosted_zone)
     )
 
+    certificate_wild_touch = acm.Certificate(
+      self,
+      "CertificateWildTouch",
+      domain_name="*.touch.tasuki-tech.jp",
+      validation=acm.CertificateValidation.from_dns(hosted_zone)
+    )
+
     listener = load_balancer.add_listener(
       "Listner",
       port=443,
       open=True,
-      certificates=[certificate, certificate_wild],
+      certificates=[certificate, certificate_touch, certificate_wild, certificate_wild_touch],
     )
 
     # 本番サービスのリスナーを追加
