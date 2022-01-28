@@ -274,10 +274,29 @@ class TouchAndPlanCdkStack(cdk.Stack):
       record_name=f"*.{app_name}",
     )
 
+    route53.ARecord(self, "ARecordTouch",
+      zone=hosted_zone,
+      target=route53.RecordTarget.from_alias(alias.LoadBalancerTarget(load_balancer)),
+      record_name='touch',
+    )
+
+    route53.ARecord(self, "ARecordTouchWild",
+      zone=hosted_zone,
+      target=route53.RecordTarget.from_alias(alias.LoadBalancerTarget(load_balancer)),
+      record_name="*.touch",
+    )
+
     certificate = acm.Certificate(
       self,
       "Certificate",
       domain_name="touch-and-plan.tasuki-tech.jp",
+      validation=acm.CertificateValidation.from_dns(hosted_zone)
+    )
+
+    certificate_touch = acm.Certificate(
+      self,
+      "CertificateTouch",
+      domain_name="touch.tasuki-tech.jp",
       validation=acm.CertificateValidation.from_dns(hosted_zone)
     )
 
@@ -288,11 +307,18 @@ class TouchAndPlanCdkStack(cdk.Stack):
       validation=acm.CertificateValidation.from_dns(hosted_zone)
     )
 
+    certificate_wild_touch = acm.Certificate(
+      self,
+      "CertificateWildTouch",
+      domain_name="*.touch.tasuki-tech.jp",
+      validation=acm.CertificateValidation.from_dns(hosted_zone)
+    )
+
     listener = load_balancer.add_listener(
       "Listner",
       port=443,
       open=True,
-      certificates=[certificate, certificate_wild],
+      certificates=[certificate, certificate_touch, certificate_wild, certificate_wild_touch],
     )
 
     # 本番サービスのリスナーを追加
@@ -311,7 +337,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
       "ECSStg",
       port=80,
       conditions=[
-        alb.ListenerCondition.host_headers([f"staging.{app_name}.tasuki-tech.jp"]),
+        alb.ListenerCondition.host_headers([f"staging.{app_name}.tasuki-tech.jp", "staging.touch.tasuki-tech.jp"]),
       ],
       priority=100,
       targets=[ecs_service_stg.load_balancer_target(
