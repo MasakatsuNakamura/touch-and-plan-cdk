@@ -30,8 +30,8 @@ class TouchAndPlanCdkStack(cdk.Stack):
     super().__init__(scope, construct_id, **kwargs)
 
     # The code that defines your stack goes here
-    app_name = 'touch-and-plan'
-    cidr = '10.1.0.0/16'
+    app_name = 'touch-and-plan-v1'
+    cidr = '10.2.0.0/16'
 
     bucket = s3.Bucket(self,
       "S3Bucket",
@@ -55,29 +55,6 @@ class TouchAndPlanCdkStack(cdk.Stack):
         ),
       ],
     )
-
-    vpc_tp = ec2.Vpc.from_lookup(self, id='TPPlannerVPC',
-      vpc_id='vpc-076934b9cd5f7038a',
-    )
-
-    vpc_peering_connection = ec2.CfnVPCPeeringConnection(self, 'Peering',
-      vpc_id=cdk.Token.as_string(vpc.vpc_id),
-      peer_vpc_id=cdk.Token.as_string(vpc_tp.vpc_id),
-    )
-
-    for i, subnet in enumerate(vpc.public_subnets):
-      ec2.CfnRoute(self, f'VpcRoute{i}',
-        route_table_id=subnet.route_table.route_table_id,
-        destination_cidr_block=vpc_tp.vpc_cidr_block,
-        vpc_peering_connection_id=vpc_peering_connection.ref,
-      )
-
-    for i, subnet in enumerate(vpc_tp.select_subnets().subnets):
-      ec2.CfnRoute(self, f'PeerVpcRoute{i}',
-        route_table_id=subnet.route_table.route_table_id,
-        destination_cidr_block=vpc.vpc_cidr_block,
-        vpc_peering_connection_id=vpc_peering_connection.ref,
-      )
 
     ec2_security_group = ec2.SecurityGroup(
       self,
@@ -262,18 +239,6 @@ class TouchAndPlanCdkStack(cdk.Stack):
       hosted_zone_id='Z01510561ZAO0Y6YTTFNY',
     )
 
-    route53.ARecord(self, "ARecord",
-      zone=hosted_zone,
-      target=route53.RecordTarget.from_alias(alias.LoadBalancerTarget(load_balancer)),
-      record_name=app_name,
-    )
-
-    route53.ARecord(self, "ARecordWild",
-      zone=hosted_zone,
-      target=route53.RecordTarget.from_alias(alias.LoadBalancerTarget(load_balancer)),
-      record_name=f"*.{app_name}",
-    )
-
     route53.ARecord(self, "ARecordTouch",
       zone=hosted_zone,
       target=route53.RecordTarget.from_alias(alias.LoadBalancerTarget(load_balancer)),
@@ -286,24 +251,10 @@ class TouchAndPlanCdkStack(cdk.Stack):
       record_name="*.touch",
     )
 
-    certificate = acm.Certificate(
-      self,
-      "Certificate",
-      domain_name="touch-and-plan.tasuki-tech.jp",
-      validation=acm.CertificateValidation.from_dns(hosted_zone)
-    )
-
     certificate_touch = acm.Certificate(
       self,
       "CertificateTouch",
       domain_name="touch.tasuki-tech.jp",
-      validation=acm.CertificateValidation.from_dns(hosted_zone)
-    )
-
-    certificate_wild = acm.Certificate(
-      self,
-      "CertificateWild",
-      domain_name="*.touch-and-plan.tasuki-tech.jp",
       validation=acm.CertificateValidation.from_dns(hosted_zone)
     )
 
@@ -318,7 +269,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
       "Listner",
       port=443,
       open=True,
-      certificates=[certificate, certificate_touch, certificate_wild, certificate_wild_touch],
+      certificates=[certificate_touch, certificate_wild_touch],
     )
 
     # 本番サービスのリスナーを追加
@@ -337,7 +288,7 @@ class TouchAndPlanCdkStack(cdk.Stack):
       "ECSStg",
       port=80,
       conditions=[
-        alb.ListenerCondition.host_headers([f"staging.{app_name}.tasuki-tech.jp", "staging.touch.tasuki-tech.jp"]),
+        alb.ListenerCondition.host_headers(["staging.touch.tasuki-tech.jp"]),
       ],
       priority=100,
       targets=[ecs_service_stg.load_balancer_target(
@@ -426,47 +377,4 @@ class TouchAndPlanCdkStack(cdk.Stack):
       monitoring_interval=cdk.Duration.seconds(60),
       cloudwatch_logs_retention=logs.RetentionDays.ONE_MONTH,
       auto_minor_version_upgrade=False,
-    )
-
-    key_pair = KeyPair(
-      self,
-      "KeyPair",
-      name=f'{app_name}',
-      store_public_key=True,
-    )
-
-    user_data = ec2.UserData.for_linux(shebang='#!/bin/bash -ex exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&')
-    user_data.add_commands('yum update -y')
-    user_data.add_commands('yum localinstall -y https://dev.mysql.com/get/mysql80-community-release-el7-3.noarch.rpm')
-    user_data.add_commands('yum-config-manager --enable mysql80-community')
-    user_data.add_commands('yum install -y mysql-community-client')
-    user_data.add_commands('amazon-linux-extras install nginx1 -y')
-    user_data.add_commands('echo "server {" > /etc/nginx/conf.d/app.conf')
-    user_data.add_commands('echo "  listen  80;" >> /etc/nginx/conf.d/app.conf')
-    user_data.add_commands('echo "  server_name  heroz-dev.touch-and-plan.tasuki-tech.jp;" >> /etc/nginx/conf.d/app.conf')
-    user_data.add_commands('echo "  location / {" >> /etc/nginx/conf.d/app.conf')
-    user_data.add_commands('echo "    proxy_pass https://calc-volume-dev.heroz.jp;" >> /etc/nginx/conf.d/app.conf')
-    user_data.add_commands('echo "  }" >> /etc/nginx/conf.d/app.conf')
-    user_data.add_commands('echo "}" >> /etc/nginx/conf.d/app.conf')
-    user_data.add_commands('echo "server {" >> /etc/nginx/conf.d/app.conf')
-    user_data.add_commands('echo "  listen  80;" >> /etc/nginx/conf.d/app.conf')
-    user_data.add_commands('echo "  server_name  heroz.touch-and-plan.tasuki-tech.jp;" >> /etc/nginx/conf.d/app.conf')
-    user_data.add_commands('echo "  location / {" >> /etc/nginx/conf.d/app.conf')
-    user_data.add_commands('echo "    proxy_pass https://calc-volume.heroz.jp;" > /etc/nginx/conf.d/app.conf')
-    user_data.add_commands('echo "  }" >> /etc/nginx/conf.d/app.conf')
-    user_data.add_commands('echo "}" >> /etc/nginx/conf.d/app.conf')
-    user_data.add_commands('systemctl start nginx')
-    user_data.add_commands('systemctl enable nginx')
-
-    ec2.Instance(
-      self,
-      'ec2',
-      vpc=vpc,
-      machine_image=ec2.AmazonLinuxImage(generation=ec2.AmazonLinuxGeneration.AMAZON_LINUX_2),
-      instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.MICRO),
-      key_name=key_pair.key_pair_name,
-      security_group=ec2_security_group,
-      vpc_subnets=ec2.SubnetSelection(subnets=vpc.public_subnets),
-      user_data=user_data,
-      instance_name=f'{app_name} Bastion',
     )
